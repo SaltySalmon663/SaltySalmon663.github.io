@@ -8,7 +8,8 @@ import { RollingStockManager } from "./components/RollingStockManager";
 import { IndustryManager } from "./components/IndustryManager";
 import { EventCardDrawer } from "./components/EventCardDrawer";
 import { LocomotiveMaintenance, LocomotiveStatus, getMaintenanceInfo } from "./components/LocomotiveMaintenance";
-import { Home, DollarSign, Train, Factory, Clock, Wrench, Settings, BarChart2 } from "lucide-react";
+import { CrewManager, Worker, CrewAssignment, computeCrewEffects } from "./components/CrewManager";
+import { Chrome as Home, DollarSign, Brain as Train, Factory, Clock, Wrench, Settings, ChartBar as BarChart2 } from "lucide-react";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { FinanceHistoryChart } from "./components/FinanceHistoryChart";
 import { BackgroundCostAlert } from "./components/BackgroundCostAlert";
@@ -98,6 +99,8 @@ interface AppData {
   backgroundCostsEnabled: boolean;
   industryNotificationsEnabled: boolean;
   lastIndustryNotification?: number;
+  workers: Worker[];
+  crewAssignments: CrewAssignment[];
 }
 
 export default function App() {
@@ -118,7 +121,9 @@ export default function App() {
     lastActivityTime: Date.now(),
     notificationsEnabled: false,
     backgroundCostsEnabled: true,
-    industryNotificationsEnabled: true
+    industryNotificationsEnabled: true,
+    workers: [],
+    crewAssignments: [],
   });
 
   const [isLoading, setIsLoading] = useState(true);
@@ -169,7 +174,9 @@ export default function App() {
           lastActivityTime: data.lastActivityTime || Date.now(),
           notificationsEnabled: data.notificationsEnabled !== undefined ? data.notificationsEnabled : false,
           backgroundCostsEnabled: data.backgroundCostsEnabled !== undefined ? data.backgroundCostsEnabled : true,
-          industryNotificationsEnabled: data.industryNotificationsEnabled !== undefined ? data.industryNotificationsEnabled : true
+          industryNotificationsEnabled: data.industryNotificationsEnabled !== undefined ? data.industryNotificationsEnabled : true,
+          workers: data.workers || [],
+          crewAssignments: data.crewAssignments || [],
         };
 
         // Calculate background costs and industry consumption if enabled
@@ -299,6 +306,34 @@ export default function App() {
 
     return () => clearInterval(interval);
   }, [appData.backgroundCostsEnabled]);
+
+  // Weekly payroll deduction — deducts per real-time hour proportionally (weekly wage / 168 hours)
+  useEffect(() => {
+    if (isLoading) return;
+    const interval = setInterval(() => {
+      setAppData(prev => {
+        if (prev.workers.length === 0) return prev;
+        const weeklyPayroll = prev.workers.reduce((s, w) => s + w.weeklyWage, 0);
+        const hourlyPayroll = weeklyPayroll / 168;
+        const tickPayroll = (hourlyPayroll / 3600) * 60; // per minute tick
+        if (tickPayroll <= 0) return prev;
+        const record: FinancialRecord = {
+          id: `pay-${Date.now()}`,
+          type: 'expense',
+          description: `Crew payroll (${prev.workers.length} workers)`,
+          amount: tickPayroll,
+          timestamp: Date.now(),
+        };
+        return {
+          ...prev,
+          balance: prev.balance - tickPayroll,
+          totalExpenses: prev.totalExpenses + tickPayroll,
+          financialRecords: [...prev.financialRecords, record],
+        };
+      });
+    }, 60000); // every real minute
+    return () => clearInterval(interval);
+  }, [isLoading]);
 
   // Check for low balance or critical conditions and send notifications
   useEffect(() => {
@@ -451,9 +486,13 @@ export default function App() {
         setElapsedTime(elapsed);
 
         const hours = elapsed / 3600;
-        const totalCostPerHour = activeLocos.reduce((sum, loco) =>
-          sum + loco.fuelCostPerHour + loco.crewCostPerHour + loco.maintenanceCostPerHour, 0
-        );
+        const totalCostPerHour = activeLocos.reduce((sum, loco) => {
+          const assignment = appData.crewAssignments.find(a => a.locoId === loco.id);
+          const effects = computeCrewEffects(appData.workers, assignment);
+          const fuelCost = loco.fuelCostPerHour * effects.fuelModifier;
+          const opsCost = (loco.crewCostPerHour + loco.maintenanceCostPerHour) * effects.speedModifier * effects.crewCostModifier;
+          return sum + fuelCost + opsCost;
+        }, 0);
         const cost = hours * totalCostPerHour;
         setCurrentSessionCost(cost);
       }, 100);
@@ -462,7 +501,7 @@ export default function App() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isOperating, activeLocos, sessionStartTime, timeMultiplier]);
+  }, [isOperating, activeLocos, sessionStartTime, timeMultiplier, appData.crewAssignments, appData.workers]);
 
   const handleStartSession = (locomotiveIds: string[]) => {
     const locos = LOCOMOTIVES.filter(l => locomotiveIds.includes(l.id));
@@ -644,7 +683,9 @@ export default function App() {
       userPhone: appData.userPhone,
       notificationsEnabled: appData.notificationsEnabled,
       backgroundCostsEnabled: appData.backgroundCostsEnabled,
-      industryNotificationsEnabled: appData.industryNotificationsEnabled
+      industryNotificationsEnabled: appData.industryNotificationsEnabled,
+      workers: [],
+      crewAssignments: [],
     };
 
     try {
@@ -683,6 +724,46 @@ export default function App() {
           : industry
       )
     }));
+  };
+
+  const handleHireWorker = (worker: Worker) => {
+    setAppData(prev => ({
+      ...prev,
+      workers: [...prev.workers, worker],
+    }));
+  };
+
+  const handleFireWorker = (workerId: string) => {
+    setAppData(prev => ({
+      ...prev,
+      workers: prev.workers.filter(w => w.id !== workerId),
+      crewAssignments: prev.crewAssignments.map(a => ({
+        ...a,
+        engineer: a.engineer === workerId ? undefined : a.engineer,
+        conductor: a.conductor === workerId ? undefined : a.conductor,
+        fireman: a.fireman === workerId ? undefined : a.fireman,
+        brakeman: a.brakeman === workerId ? undefined : a.brakeman,
+      })),
+    }));
+  };
+
+  const handleAssignWorker = (locoId: string, role: string, workerId: string | undefined) => {
+    setAppData(prev => {
+      const existing = prev.crewAssignments.find(a => a.locoId === locoId);
+      const update = { [role]: workerId };
+      if (existing) {
+        return {
+          ...prev,
+          crewAssignments: prev.crewAssignments.map(a =>
+            a.locoId === locoId ? { ...a, ...update } : a
+          ),
+        };
+      }
+      return {
+        ...prev,
+        crewAssignments: [...prev.crewAssignments, { locoId, ...update } as CrewAssignment],
+      };
+    });
   };
 
   const handleTestConsumption = () => {
@@ -804,6 +885,8 @@ export default function App() {
               )}
               currentCost={currentSessionCost}
               availableLocomotives={availableLocomotiveIds}
+              workers={appData.workers}
+              crewAssignments={appData.crewAssignments}
             />
             <IndustryManager industries={appData.industries} />
           </TabsContent>
@@ -814,6 +897,14 @@ export default function App() {
           </TabsContent>
 
           <TabsContent value="maintenance" className="space-y-6">
+            <CrewManager
+              workers={appData.workers}
+              assignments={appData.crewAssignments}
+              balance={appData.balance}
+              onHireWorker={handleHireWorker}
+              onFireWorker={handleFireWorker}
+              onAssignWorker={handleAssignWorker}
+            />
             <LocomotiveMaintenance
               locomotives={appData.locomotives}
               onStartMaintenance={handleStartMaintenance}

@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
-import { Play, Pause, Clock, Fuel, Users, AlertCircle } from "lucide-react";
+import { Play, Pause, Clock, CircleAlert as AlertCircle, Users } from "lucide-react";
 import { Checkbox } from "./ui/checkbox";
 import { LocomotiveConditionIndicator } from "./LocomotiveConditionIndicator";
+import { computeCrewEffects, CrewAssignment, Worker } from "./CrewManager";
 
 interface Locomotive {
   id: string;
@@ -33,9 +34,22 @@ interface OperatingSessionProps {
   activeLocoConditions: Map<string, number>;
   currentCost: number;
   availableLocomotives: string[];
+  workers: Worker[];
+  crewAssignments: CrewAssignment[];
 }
 
-export function OperatingSession({ isActive, onStart, onStop, elapsedTime, activeLocos, activeLocoConditions, currentCost, availableLocomotives }: OperatingSessionProps) {
+export function OperatingSession({
+  isActive,
+  onStart,
+  onStop,
+  elapsedTime,
+  activeLocos,
+  activeLocoConditions,
+  currentCost,
+  availableLocomotives,
+  workers,
+  crewAssignments,
+}: OperatingSessionProps) {
   const availableLocos = LOCOMOTIVES.filter(l => availableLocomotives.includes(l.id));
   const [selectedLocoIds, setSelectedLocoIds] = useState<string[]>([]);
 
@@ -46,9 +60,29 @@ export function OperatingSession({ isActive, onStart, onStop, elapsedTime, activ
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const hasEngineer = (locoId: string) => {
+    const assignment = crewAssignments.find(a => a.locoId === locoId);
+    return !!assignment?.engineer;
+  };
+
+  const getEffectiveCostPerHour = (loco: Locomotive) => {
+    const assignment = crewAssignments.find(a => a.locoId === loco.id);
+    const effects = computeCrewEffects(workers, assignment);
+    const baseFuel = loco.fuelCostPerHour * effects.fuelModifier;
+    const baseOps = (loco.crewCostPerHour + loco.maintenanceCostPerHour) * effects.speedModifier * effects.crewCostModifier;
+    return baseFuel + baseOps;
+  };
+
+  const getCrewLabel = (locoId: string) => {
+    const assignment = crewAssignments.find(a => a.locoId === locoId);
+    const effects = computeCrewEffects(workers, assignment);
+    return effects.label;
+  };
+
   const handleStart = () => {
-    if (selectedLocoIds.length > 0) {
-      onStart(selectedLocoIds);
+    const readyLocos = selectedLocoIds.filter(id => hasEngineer(id));
+    if (readyLocos.length > 0) {
+      onStart(readyLocos);
     }
   };
 
@@ -60,16 +94,14 @@ export function OperatingSession({ isActive, onStart, onStop, elapsedTime, activ
     );
   };
 
-  const getTotalCostPerHour = (loco: Locomotive) => {
-    return loco.fuelCostPerHour + loco.crewCostPerHour + loco.maintenanceCostPerHour;
-  };
-
   const getSelectedTotalCost = () => {
     return selectedLocoIds.reduce((total, id) => {
       const loco = LOCOMOTIVES.find(l => l.id === id);
-      return total + (loco ? getTotalCostPerHour(loco) : 0);
+      return total + (loco ? getEffectiveCostPerHour(loco) : 0);
     }, 0);
   };
+
+  const selectedWithoutCrew = selectedLocoIds.filter(id => !hasEngineer(id));
 
   return (
     <Card>
@@ -93,37 +125,78 @@ export function OperatingSession({ isActive, onStart, onStop, elapsedTime, activ
                 <div className="space-y-3">
                   <label className="text-sm font-medium">Select Locomotives ({selectedLocoIds.length} selected)</label>
                   <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {availableLocos.map((loco) => (
-                      <div
-                        key={loco.id}
-                        className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-accent cursor-pointer"
-                        onClick={() => toggleLocoSelection(loco.id)}
-                      >
-                        <Checkbox
-                          checked={selectedLocoIds.includes(loco.id)}
-                          onCheckedChange={() => toggleLocoSelection(loco.id)}
-                        />
-                        <div className="flex-1">
-                          <div className="text-sm font-medium">{loco.name}</div>
-                          <div className="text-xs text-muted-foreground">${getTotalCostPerHour(loco)}/hr</div>
+                    {availableLocos.map((loco) => {
+                      const engineerPresent = hasEngineer(loco.id);
+                      const crewLabel = getCrewLabel(loco.id);
+                      const effectiveCost = getEffectiveCostPerHour(loco);
+
+                      return (
+                        <div
+                          key={loco.id}
+                          className={`flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                            !engineerPresent
+                              ? "border-red-200 dark:border-red-900 bg-red-50/50 dark:bg-red-950/10 opacity-75"
+                              : "hover:bg-accent"
+                          }`}
+                          onClick={() => engineerPresent && toggleLocoSelection(loco.id)}
+                        >
+                          <Checkbox
+                            checked={selectedLocoIds.includes(loco.id)}
+                            disabled={!engineerPresent}
+                            onCheckedChange={() => engineerPresent && toggleLocoSelection(loco.id)}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium">{loco.name}</div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-xs text-muted-foreground">
+                                ${effectiveCost.toFixed(0)}/hr
+                              </span>
+                              {engineerPresent ? (
+                                <Badge className="text-xs h-4 px-1 bg-green-500 text-white">
+                                  {crewLabel}
+                                </Badge>
+                              ) : (
+                                <Badge className="text-xs h-4 px-1 bg-red-500 text-white">
+                                  No Engineer
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          {!engineerPresent && (
+                            <Users className="h-4 w-4 text-red-500 shrink-0" />
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
+
                   {selectedLocoIds.length > 0 && (
-                    <div className="p-3 rounded-lg bg-muted">
+                    <div className="p-3 rounded-lg bg-muted space-y-1">
                       <div className="flex justify-between text-sm">
-                        <span>Combined cost per hour:</span>
-                        <span className="font-bold">${getSelectedTotalCost()}/hr</span>
+                        <span>Estimated cost per hour:</span>
+                        <span className="font-bold">${getSelectedTotalCost().toFixed(0)}/hr</span>
                       </div>
+                      {selectedWithoutCrew.length > 0 && (
+                        <div className="text-xs text-red-600 dark:text-red-400">
+                          {selectedWithoutCrew.length} locomotive(s) lack an engineer and will be skipped.
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
+
+                {availableLocos.every(l => !hasEngineer(l.id)) && (
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-200">
+                    <Users className="h-4 w-4 shrink-0 mt-0.5" />
+                    Hire and assign Engineers in the Crew tab to operate locomotives.
+                  </div>
+                )}
+
                 <Button
                   onClick={handleStart}
                   className="w-full"
                   size="lg"
-                  disabled={selectedLocoIds.length === 0}
+                  disabled={selectedLocoIds.filter(id => hasEngineer(id)).length === 0}
                 >
                   <Play className="h-4 w-4 mr-2" />
                   Start Operating Session
@@ -140,11 +213,9 @@ export function OperatingSession({ isActive, onStart, onStop, elapsedTime, activ
                   RUNNING
                 </Badge>
               </div>
-
               <div className="text-4xl font-bold text-center py-2">
                 {formatTime(elapsedTime)}
               </div>
-
               {activeLocos.length > 0 && (
                 <div className="text-sm opacity-90 text-center">
                   {activeLocos.length} locomotive{activeLocos.length > 1 ? 's' : ''} running
@@ -153,19 +224,24 @@ export function OperatingSession({ isActive, onStart, onStop, elapsedTime, activ
             </div>
 
             {activeLocos.length > 0 && (
-              <>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {activeLocos.map((loco) => (
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {activeLocos.map((loco) => {
+                  const effectiveCost = getEffectiveCostPerHour(loco);
+                  const crewLabel = getCrewLabel(loco.id);
+                  return (
                     <div key={loco.id} className="p-2 rounded-lg bg-muted">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-medium">{loco.name}</span>
-                        <span className="text-xs text-muted-foreground">${getTotalCostPerHour(loco)}/hr</span>
+                        <div className="flex items-center gap-2">
+                          <Badge className="text-xs bg-green-500 text-white">{crewLabel}</Badge>
+                          <span className="text-xs text-muted-foreground">${effectiveCost.toFixed(0)}/hr</span>
+                        </div>
                       </div>
                       <LocomotiveConditionIndicator condition={activeLocoConditions.get(loco.id) || 100} />
                     </div>
-                  ))}
-                </div>
-              </>
+                  );
+                })}
+              </div>
             )}
 
             <div className="p-3 rounded-lg bg-destructive/10 border-destructive/20 border">
