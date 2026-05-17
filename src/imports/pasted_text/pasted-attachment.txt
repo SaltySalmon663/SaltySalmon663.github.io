@@ -1,0 +1,94 @@
+I am making a python application to run on an android phone that works as a finance manager for my model railroad, as a tool to motivate me to work and run trains more often. I want it to show the amount of money that the railroad has at its disposal. The railroad can earn money by delivering goods, but loses money by running locomotives, fuel costs, crew costs, equipment maintenance, and parts. In order to keep the railroad afloat I will have to be running trains and making money, there should be a front end that displays all of this data cleanly, and has many features to allow for it to work properly with my following system. 
+
+Current System:
+Simulates industry orders by weighing the demand of material against the current amount of inventory stored. Each session industry usage cards are drawn and subtracted from the current inventory, once the inventory is below the reorder threshold cars are ordered for the industry. With each car ordered, once they are delivered they will increase the inventory of the industry by ten resources even when spotted to the storage track. Within each industry a storage and an unloading track is located, cars can only be moved through the process of unloading to leave the industry when placed in the unloading track; once the unloading track is free the cars can be moved from storage to begin unloading. Each session an event card is also drawn that brings a unique twist to the operating session, whether it is a passenger excursion or increased industry demand, etc.
+
+Issues
+Even though some local industry switching is done within industries with moving cars from storage to unloading, very little interesting or complex industry switching is done
+The actual industries seem too simple and I want to find a way to make the unloading and loading process more interesting for the operators 
+Operation sessions feel too similar, and especially with my limited set of rolling stock cars are cycled in and out in a very repetitive manner, and in industries sets of two cars are frequently delivered into storage, then unloading then brought off the layout in a way that is very repetitive and uninteresting
+Only a few event cards are interesting, and though they change or add minor things rarely will make the operators change their approach or viewpoint when operating. The most interesting cards are those that add a twist, constraint, or stimulate new ideas and goals while operating  
+
+Things that work:
+The system of cycling cards from the yard, to the industry unloading, or storage if full then unloading, then back to the yard to be taken off of the layout works very well and seamlessly
+Operations are generated all on paper and through a card system with little to no work
+The system seamlessly moves around on average 12 cars a session without conflict
+Each industry has varying demand and will not order new cars every session
+
+LOCOMOTIVES:
+NH 0703 DER-1
+NH 370 A-Unit & 371 B-Unit
+NH 1404 & 1405 RS-11s
+NH 503 RS-1
+NH 0937 S-1
+NH RDC BUDD Car
+
+CARS:
+Passenger:
+3 Silver Streamlined Pass Cars 
+2 Pullman Pass Cars
+1 Pullman Baggage Car
+1 Pullman Observation Car
+Hoppers: 
+2x UP 62040
+PC 258602 
+Flatcars:
+B&M 5311 
+Tankcars: 
+GTAX 39617
+PROX 84925
+Boxcars:
+D&RGW 39497 
+SRLX 4226
+UP 187872
+NP 25591
+B&O 466097
+NH 30564
+NH 30562
+RI 262953
+RI 24064
+B&O 274389 
+PRR 78137
+GTW 583699
+PRR 175263
+B&O 381798
+Stations: Sturbridge Station <-> Ridgefield Station <->  Queensware Station.
+Industries: 
+Johnson Lumber - CAR MAX 5 - Inventory Max 50 
+Harrison & Sons Manufacturing - CAR MAX 4-5 Inventory Max 40
+Brauman Paper Co. :  Inventory Max 20 Chemical & 70 Material
+Chem Tank 1 CAR MAX 2
+Chem Tank 2 CAR MAX 2
+Storage Track CAR MAX 2
+Loading  Bay CAR MAX 3
+Sturbridge Coal Tipple -  CAR MAX 2 Inventory Max 20 
+Sturbridge Transload-  CAR MAX 4 Inventory Max 40 
+
+Card Types:
+Traffic Events (Events that add twists to the operating session)
+Weather Events(Mild, Moderate, Heavy, Winter, Severe)
+Passenger Events
+
+
+Good Weather Card Examples
+Chilly Morning (Mild): The first industry switched must be the closest one to warm up the locomotive.
+Humid Conditions (Mild) : The first industry switched must be Brauman Paper Co. to prevent damage to stored materials and paper
+Passing Rain Squall (Moderate) Outdoor unloading is interrupted. First outdoor industry visited cannot unload this session.
+Strong Windstorm (Heavy)Light empty cars must be placed toward the center of the train.
+Fresh Snow Cover (Winter) Coal deliveries increase. Coal Tipple becomes priority service and must be served first and sent outbound instead of returning to the yard.
+Major Thunderstorm (Severe) One random industry track is blocked by fallen debris, a crane and flatcar must be spotted to clear with a locomotive to clear. Switch two other industries with a different loco before the track is clear.
+
+Good Traffic Card Examples:
+Good traffic cards have a story and reason to the and provide a twist or change the operating session, and don't feel arbitrary, the car should provide something interesting to the session rather than slowing down and making the operations session boring.
+Chemical Oversupply : If brauman currently has 1 or more tank car spotted generate no new tank car orders regardless of need
+Locomotive Inspection: spot a RDC Budd Car to the Ridgefield locomotive works
+Bulk Equipment Import : Sturbridge Transload requires one flat car and crane this session
+Scrap Metal Cleaning : Spot a high priority hopper Car to the Loading bay of Harris and Sons If loading bay is full move a car to storage to make space
+Heavy Steel Loads: Spot a crane car to the storage track of Harris and Sons
+Damaged Equipment : Replace a boxcar at an industry with a new one
+Fragile Object Delivery: Deliver a box car to Sturbridge Transload, boxcar must be delivered in a single car train
+Track Work: Spot a Crane car and locomotive to the Ridgefield Bridge and switch two industries before bringing the crane and locomotive back to the yard
+
+
+Passenger Card Examples:
+
